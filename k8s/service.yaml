@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-wrapper
+  namespace: fortiaigate
+  labels:
+    app: llm-wrapper
+    app.kubernetes.io/name: llm-wrapper
+    app.kubernetes.io/part-of: fortiaigate-platform
+spec:
+  selector:
+    app: llm-wrapper
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 8080
+      name: http
+  type: ClusterIP
