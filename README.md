@@ -62,7 +62,7 @@ The wrapper runs as a `ClusterIP` service in the `fortiaigate` namespace alongsi
 - Access to the EKS cluster deployed by `fortiaigate-terraform-helm` (`kubectl` configured and pointing at it)
 - An ECR repository to host the wrapper image
 - An OpenAI API key with access to `gpt-4o` (or your chosen model)
-- The publicly reachable FortiWeb MCP endpoint URL
+- The publicly reachable FortiWeb MCP transport endpoint URL
 
 Verify your kubectl context before proceeding:
 
@@ -133,12 +133,12 @@ image: <YOUR_ACCOUNT_ID>.dkr.ecr.<YOUR_AWS_REGION>.amazonaws.com/llm-wrapper:lat
 kubectl create secret generic llm-wrapper-secrets \
   --namespace fortiaigate \
   --from-literal=OPENAI_API_KEY="sk-..." \
-  --from-literal=MCP_SERVER_URL="https://fortiweb.example.com" \
+  --from-literal=MCP_SERVER_URL="https://fortiweb.example.com/mcp" \
   --from-literal=DEFAULT_MODEL="gpt-4o" \
   --from-literal=MCP_REQUIRE_APPROVAL="never"
 ```
 
-`MCP_SERVER_URL` is the base URL of the publicly reachable FortiWeb MCP gateway (without the `/mcp` path — the app appends that automatically).
+`MCP_SERVER_URL` is the full publicly reachable FortiWeb MCP transport endpoint that OpenAI will call. Use the route FortiWeb exposes for the selected transport, for example `/mcp`, `/sse`, or another configured path.
 
 `MCP_REQUIRE_APPROVAL` controls whether OpenAI must confirm each MCP tool call. `never` is appropriate for fully autonomous agentic use; set to `always` if you want human-in-the-loop approval.
 
@@ -158,30 +158,15 @@ kubectl logs -n fortiaigate -l app=llm-wrapper
 
 The readiness probe hits `/health` every 10 seconds. Once the pod shows `Running` and `READY 1/1`, it is accepting traffic.
 
-### 6. (Optional) Restrict network access with a NetworkPolicy
+### 6. Restrict network access with a NetworkPolicy
 
-By default any pod in the cluster can reach the wrapper. To limit ingress to FortiAIGate's `core` pod only:
+By default any pod in the cluster can reach the wrapper. Limit ingress to FortiAIGate's `core` pod only:
 
 ```bash
-kubectl apply -f - <<EOF
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: llm-wrapper-allow-fortiaigate
-  namespace: fortiaigate
-spec:
-  podSelector:
-    matchLabels:
-      app: llm-wrapper
-  ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app: core
-  policyTypes:
-    - Ingress
-EOF
+kubectl apply -f k8s/networkpolicy.yaml
 ```
+
+This policy depends on FortiAIGate core pods using the `app: core` label and the wrapper pod using `app: llm-wrapper`, which match the default manifests.
 
 ### 7. Configure FortiAIGate to use the wrapper
 
@@ -190,9 +175,16 @@ In the FortiAIGate admin UI, add a new upstream LLM provider with these settings
 | Field | Value |
 |-------|-------|
 | Provider type | OpenAI (or OpenAI-compatible) |
-| API Base URL | `http://llm-wrapper.fortiaigate.svc.cluster.local:8080/v1` |
+| API Base URL | `http://llm-wrapper.<NAMESPACE>.svc.cluster.local:8080/v1` |
 | API Key | any non-empty string (ignored by the wrapper) |
 | Model | `gpt-4o` (must match `DEFAULT_MODEL` in the secret) |
+
+Replace `<NAMESPACE>` with the Kubernetes namespace FortiAIGate is deployed into (the `namespace` variable in `fortiaigate-terraform-helm`, defaulting to `fortiaigate`). The `cluster.local` portion is the Kubernetes cluster DNS domain — it is **not** the EKS cluster name and does not change between clusters unless the DNS domain was explicitly customized at cluster creation (uncommon).
+
+With the default namespace the URL is:
+```
+http://llm-wrapper.fortiaigate.svc.cluster.local:8080/v1
+```
 
 The wrapper is reached over plain HTTP on the in-cluster network. TLS is not required for this link — both pods run in the same namespace and AWS encrypts node-to-node VPC traffic at the network layer.
 
@@ -209,7 +201,7 @@ Run the app locally to verify OpenAI connectivity before deploying:
 ```bash
 pip install -r requirements.txt
 export OPENAI_API_KEY="sk-..."
-export MCP_SERVER_URL="https://fortiweb.example.com"
+export MCP_SERVER_URL="https://fortiweb.example.com/mcp"
 uvicorn app.main:app --port 8080
 ```
 
@@ -258,7 +250,7 @@ All configuration is supplied via environment variables (injected from the `llm-
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | Yes | — | OpenAI API key |
-| `MCP_SERVER_URL` | Yes | — | FortiWeb base URL (e.g. `https://fortiweb.example.com`) |
+| `MCP_SERVER_URL` | Yes | — | Full FortiWeb MCP transport endpoint URL (e.g. `https://fortiweb.example.com/mcp`) |
 | `DEFAULT_MODEL` | No | `gpt-4o` | OpenAI model to use when the request does not specify one |
 | `MCP_REQUIRE_APPROVAL` | No | `never` | `never` for autonomous tool use; `always` for human-in-the-loop |
 | `LOG_LEVEL` | No | `INFO` | Python logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |

@@ -24,7 +24,7 @@ def _build_mcp_tool() -> dict:
     return {
         "type": "mcp",
         "server_label": "fortiweb",
-        "server_url": f"{settings.mcp_server_url}/mcp",
+        "server_url": settings.mcp_server_url,
         "require_approval": settings.mcp_require_approval,
     }
 

@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: llm-wrapper-allow-fortiaigate-core
+  namespace: fortiaigate
+  labels:
+    app: llm-wrapper
+    app.kubernetes.io/name: llm-wrapper
+    app.kubernetes.io/part-of: fortiaigate-platform
+spec:
+  podSelector:
+    matchLabels:
+      app: llm-wrapper
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: core
+      ports:
+        - protocol: TCP
+          port: 8080
