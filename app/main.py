@@ -21,12 +21,15 @@ _RESPONSES_API_PARAMS = {"temperature", "max_tokens", "top_p", "stream"}
 
 
 def _build_mcp_tool() -> dict:
-    return {
+    tool: dict[str, Any] = {
         "type": "mcp",
-        "server_label": "fortiweb",
+        "server_label": settings.mcp_server_label,
         "server_url": settings.mcp_server_url,
         "require_approval": settings.mcp_require_approval,
     }
+    if settings.mcp_api_key:
+        tool["headers"] = {"Authorization": f"Bearer {settings.mcp_api_key}"}
+    return tool
 
 
 def _split_messages(messages: list[dict]) -> tuple[list[dict], str | None]:

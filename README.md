@@ -127,18 +127,32 @@ image: <YOUR_ACCOUNT_ID>.dkr.ecr.<YOUR_AWS_REGION>.amazonaws.com/llm-wrapper:lat
 
 ### 4. Create the Kubernetes secret
 
-`k8s/secret.yaml` is a template with empty values. **Do not commit real credentials to git.** Fill the values inline using `kubectl`:
+There are two options for this step. 
+
+A) Update .env and then source it and pipe through envsubst before applying:
+
+```
+cp .env.example .env
+set -a && source .env && set +a
+envsubst < k8s/secret.yaml | kubectl apply -f -
+```
+
+B) Use kubectl inline commands. 
 
 ```bash
 kubectl create secret generic llm-wrapper-secrets \
   --namespace fortiaigate \
   --from-literal=OPENAI_API_KEY="sk-..." \
   --from-literal=MCP_SERVER_URL="https://fortiweb.example.com/mcp" \
+  --from-literal=MCP_SERVER_LABEL="fortiweb" \
   --from-literal=DEFAULT_MODEL="gpt-4o" \
   --from-literal=MCP_REQUIRE_APPROVAL="never"
+  # --from-literal=MCP_API_KEY="your-token"  # add if the MCP server requires authentication
 ```
 
 `MCP_SERVER_URL` is the full publicly reachable FortiWeb MCP transport endpoint that OpenAI will call. Use the route FortiWeb exposes for the selected transport, for example `/mcp`, `/sse`, or another configured path.
+
+`MCP_SERVER_LABEL` is the identifier string attached to the MCP tool in OpenAI requests. Set it to something meaningful for the server you are pointing at (e.g. `fortiweb`).
 
 `MCP_REQUIRE_APPROVAL` controls whether OpenAI must confirm each MCP tool call. `never` is appropriate for fully autonomous agentic use; set to `always` if you want human-in-the-loop approval.
 
@@ -193,6 +207,35 @@ The wrapper is reached over plain HTTP on the in-cluster network. TLS is not req
 ---
 
 ## Smoke testing
+
+### Testing without FortiWeb (public MCP server)
+
+If you don't yet have a FortiWeb MCP endpoint, you can substitute any publicly hosted, unauthenticated remote MCP server for local testing. Two good options:
+
+| Option | `MCP_SERVER_URL` | `MCP_SERVER_LABEL` | Notes |
+|--------|-----------------|-------------------|-------|
+| **GitMCP** | `https://gitmcp.io/{owner}/{repo}` | `gitmcp` | Turns any public GitHub repo into an MCP server. Replace `{owner}/{repo}` with any public repo (e.g. `https://gitmcp.io/openai/tiktoken`). No auth required. |
+| **Context7** | `https://mcp.context7.com/mcp` | `context7` | Library/framework documentation lookup. No auth required for basic use. Default `MCP_SERVER_LABEL` in config. |
+
+Copy `.env.example` to `.env` and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+```dotenv
+OPENAI_API_KEY=sk-...
+MCP_SERVER_URL=https://gitmcp.io/openai/tiktoken
+MCP_SERVER_LABEL=gitmcp
+# MCP_API_KEY is not needed for these servers — leave it unset
+```
+
+Then run locally:
+
+```bash
+pip install -r requirements.txt
+uvicorn app.main:app --port 8080
+```
 
 ### From outside the cluster (local uvicorn)
 
@@ -250,7 +293,9 @@ All configuration is supplied via environment variables (injected from the `llm-
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | Yes | — | OpenAI API key |
-| `MCP_SERVER_URL` | Yes | — | Full FortiWeb MCP transport endpoint URL (e.g. `https://fortiweb.example.com/mcp`) |
+| `MCP_SERVER_URL` | Yes | — | Full MCP transport endpoint URL (e.g. `https://fortiweb.example.com/mcp`) |
+| `MCP_SERVER_LABEL` | No | `context7` | Identifier string attached to the MCP tool in OpenAI requests; appears in tool-call events in the response stream |
+| `MCP_API_KEY` | No | — | Bearer token forwarded to the MCP server in an `Authorization` header. Omit if the server requires no authentication |
 | `DEFAULT_MODEL` | No | `gpt-4o` | OpenAI model to use when the request does not specify one |
 | `MCP_REQUIRE_APPROVAL` | No | `never` | `never` for autonomous tool use; `always` for human-in-the-loop |
 | `LOG_LEVEL` | No | `INFO` | Python logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |

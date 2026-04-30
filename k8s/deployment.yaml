@@ -17,6 +17,7 @@ spec:
       labels:
         app: llm-wrapper
     spec:
+      terminationGracePeriodSeconds: 660
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -26,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: llm-wrapper
-          image: <YOUR_ECR_REGISTRY>/llm-wrapper:latest
+          image: 228122752878.dkr.ecr.us-west-2.amazonaws.com/llm-wrapper:latest
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
@@ -70,7 +71,7 @@ spec:
             preStop:
               exec:
                 # Allow in-flight agentic (multi-tool-call) requests to drain before SIGTERM
-                command: ["sleep", "30"]
+                command: ["sleep", "60"]
       volumes:
         - name: tmp
           emptyDir: {}
