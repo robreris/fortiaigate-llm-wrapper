@@ -190,8 +190,8 @@ In the FortiAIGate admin UI, add a new upstream LLM provider with these settings
 |-------|-------|
 | Provider type | OpenAI (or OpenAI-compatible) |
 | API Base URL | `http://llm-wrapper.<NAMESPACE>.svc.cluster.local:8080/v1` |
-| API Key | any non-empty string (ignored by the wrapper) |
-| Model | `gpt-4o` (must match `DEFAULT_MODEL` in the secret) |
+| API Key | your OpenAI API key — forwarded to OpenAI via `Authorization: Bearer` |
+| Model | `gpt-4o` (or whichever model you want; overrides `DEFAULT_MODEL`) |
 
 Replace `<NAMESPACE>` with the Kubernetes namespace FortiAIGate is deployed into (the `namespace` variable in `fortiaigate-terraform-helm`, defaulting to `fortiaigate`). The `cluster.local` portion is the Kubernetes cluster DNS domain — it is **not** the EKS cluster name and does not change between clusters unless the DNS domain was explicitly customized at cluster creation (uncommon).
 
@@ -284,6 +284,30 @@ kubectl run curl-test -n fortiaigate --image=curlimages/curl --rm -it --restart=
   -d '{"model":"gpt-4o","messages":[{"role":"user","content":"What tools do you have?"}],"stream":false}'
 ```
 
+### Verifying MCP tool use
+
+When the model invokes the MCP server, the wrapper logs the tool names at INFO level:
+
+```
+INFO  MCP tools used: ['resolve-library-id', 'query-docs']
+```
+
+To force MCP usage in a test prompt, explicitly name the server label:
+
+```
+"Use Context7 to look up the latest FastAPI docs and show me how to define a POST endpoint."
+```
+
+If the log line appears, the full chain is confirmed: FortiAIGate → wrapper → OpenAI → MCP server. If it does not appear, the model answered from training data without calling the MCP server.
+
+To enable this logging from a running deployment without rebuilding:
+
+```bash
+kubectl set env deployment/llm-wrapper -n fortiaigate LOG_LEVEL=DEBUG
+# remove when done
+kubectl set env deployment/llm-wrapper -n fortiaigate LOG_LEVEL-
+```
+
 ---
 
 ## Configuration reference
@@ -292,7 +316,7 @@ All configuration is supplied via environment variables (injected from the `llm-
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `OPENAI_API_KEY` | Yes | — | OpenAI API key |
+| `OPENAI_API_KEY` | No | — | Fallback OpenAI API key. If set, used when no `Authorization: Bearer` header is present in the request. When FortiAIGate is the caller, the key comes from the request header and this variable can be omitted. |
 | `MCP_SERVER_URL` | Yes | — | Full MCP transport endpoint URL (e.g. `https://fortiweb.example.com/mcp`) |
 | `MCP_SERVER_LABEL` | No | `context7` | Identifier string attached to the MCP tool in OpenAI requests; appears in tool-call events in the response stream |
 | `MCP_API_KEY` | No | — | Bearer token forwarded to the MCP server in an `Authorization` header. Omit if the server requires no authentication |

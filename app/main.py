@@ -12,9 +12,21 @@ from app.config import settings
 
 logging.basicConfig(level=settings.log_level)
 logger = logging.getLogger(__name__)
+logger.setLevel(settings.log_level.upper())
 
 app = FastAPI(title="LLM Wrapper")
-client = openai.AsyncOpenAI(api_key=settings.openai_api_key)
+
+
+def _resolve_api_key(request: Request) -> str:
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[len("Bearer "):]
+    if settings.openai_api_key:
+        return settings.openai_api_key
+    raise HTTPException(
+        status_code=401,
+        detail={"error": {"message": "No API key provided", "type": "authentication_error", "code": "missing_api_key"}},
+    )
 
 # Responses API parameters that are valid (Chat Completions extras are dropped silently)
 _RESPONSES_API_PARAMS = {"temperature", "max_tokens", "top_p", "stream"}
@@ -129,6 +141,9 @@ async def chat_completions(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail={"error": {"message": "Invalid JSON", "type": "invalid_request_error", "code": "invalid_json"}})
 
+    api_key = _resolve_api_key(request)
+    client = openai.AsyncOpenAI(api_key=api_key)
+
     messages: list[dict] = body.get("messages", [])
     model: str = body.get("model") or settings.default_model
     stream: bool = body.get("stream", False)
@@ -161,6 +176,9 @@ async def chat_completions(request: Request):
             )
         else:
             response = await client.responses.create(**create_kwargs)
+            mcp_calls = [getattr(e, "name", None) for e in (response.output or []) if getattr(e, "type", None) == "mcp_call"]
+            if mcp_calls:
+                logger.info("MCP tools used: %s", mcp_calls)
             return JSONResponse(_to_chat_completions(response, model))
 
     except openai.APIStatusError as e:

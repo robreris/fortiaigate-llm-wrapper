@@ -27,7 +27,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: llm-wrapper
-          image: 228122752878.dkr.ecr.us-west-2.amazonaws.com/llm-wrapper:latest
+          image: 919333998172.dkr.ecr.us-east-1.amazonaws.com/llm-wrapper:latest
           imagePullPolicy: Always
           securityContext:
             allowPrivilegeEscalation: false
